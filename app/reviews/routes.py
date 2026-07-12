@@ -1,48 +1,53 @@
-from datetime import datetime, timezone
 from typing import Literal
+from uuid import UUID
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, HTTPException, Response
 
-from app.reviews.schemas import (
-    ReviewsJob,
-    ReviewsJobCreate,
-    ReviewsJobId,
-    ReviewsSample,
-)
+from app.dependencies import DbSession
+from app.reviews import service
+from app.reviews.dependencies import CollectorDep
+from app.reviews.schemas import ReviewsCollectRequest, ReviewsSample
 
 review_router = APIRouter()
 
 
-@review_router.post("/jobs", response_model=ReviewsJobId, status_code=202)
-async def create_reviews_job(job_create: ReviewsJobCreate) -> ReviewsJobId:
-    return ReviewsJobId(job_id=1)
-
-
-@review_router.get("/jobs/{job_id}", response_model=ReviewsJob)
-async def get_reviews_job(job_id: int) -> ReviewsJob:
-    return ReviewsJob(status="pending")
-
-
-@review_router.get("/samples/{sample_id}", response_model=ReviewsSample)
-async def get_reviews_sample(sample_id: int) -> ReviewsSample:
-    return ReviewsSample(
-        id=1,
-        app_id=1,
-        country_code="us",
-        created_at=datetime.now(timezone.utc),
-        reviews=[],
+@review_router.post("", response_model=ReviewsSample, status_code=201)
+async def collect_reviews(
+    collect_request: ReviewsCollectRequest, session: DbSession, collector: CollectorDep
+) -> ReviewsSample:
+    collected = await collector.collect(
+        collect_request.app_id, collect_request.country_code, collect_request.sample_size
     )
+    sample = await service.create_sample_with_reviews(
+        session,
+        app_id=collect_request.app_id,
+        country_code=collect_request.country_code,
+        reviews=collected,
+    )
+    await session.commit()
+    return ReviewsSample.model_validate(sample)
 
 
-@review_router.get("/samples/{sample_id}/download")
+@review_router.get("/{sample_id}", response_model=ReviewsSample)
+async def get_reviews_sample(sample_id: UUID, session: DbSession) -> ReviewsSample:
+    sample = await service.get_sample_with_reviews(session, sample_id)
+    if sample is None:
+        raise HTTPException(status_code=404, detail="Sample not found")
+    return ReviewsSample.model_validate(sample)
+
+
+@review_router.get("/{sample_id}/download")
 async def download_reviews_sample(
-    sample_id: int, format: Literal["json", "csv"] = "json"
+    sample_id: UUID, session: DbSession, format: Literal["json", "csv"] = "json"
 ) -> Response:
+    sample = await service.get_sample_with_reviews(session, sample_id)
+    if sample is None:
+        raise HTTPException(status_code=404, detail="Sample not found")
     if format == "csv":
-        content = "id,date,user_name,title,content,rating,app_version\n"
+        content = service.render_csv(sample)
         media_type = "text/csv"
     else:
-        content = '{"id": 1, "app_id": 1, "country_code": "us", "reviews": []}'
+        content = ReviewsSample.model_validate(sample).model_dump_json()
         media_type = "application/json"
     return Response(
         content=content,

@@ -1,4 +1,4 @@
-from datetime import datetime
+import uuid
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -15,7 +15,7 @@ class SentimentDistribution(BaseModel):
 class Disagreement(BaseModel):
     """A review whose text sentiment contradicts its star rating."""
 
-    review_id: int
+    review_id: uuid.UUID
     rating: int = Field(ge=1, le=5)
     sentiment: Sentiment
     title: str
@@ -30,28 +30,13 @@ class ActionableInsight(BaseModel):
     theme: str
     evidence_count: int = Field(ge=1)
     suggestion: str
-    example_review_ids: list[int]
+    example_review_ids: list[uuid.UUID]
 
 
 class Insight(BaseModel):
-    id: int
-    sample_id: int
-    created_at: datetime
+    sample_id: uuid.UUID
+    review_count: int = Field(ge=0)
     sentiment_distribution: SentimentDistribution
     sentiment_rating_disagreement: list[Disagreement]
     negative_keywords: list[NegativeKeyword]
     actionable_insights: list[ActionableInsight]
-
-
-class InsightsJobCreate(BaseModel):
-    sample_id: int
-
-
-class InsightsJobId(BaseModel):
-    job_id: int
-
-
-class InsightsJob(BaseModel):
-    status: Literal["pending", "running", "done", "failed"]
-    insight_id: int | None = None
-    error: str | None = None

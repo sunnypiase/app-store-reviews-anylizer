@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>App Store Review Report — App {{ sample.app_id }}</title>
+  <style>
+    body { font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1, h2, h3 { color: #222; }
+    .meta { color: #555; margin-bottom: 2rem; }
+    .charts { display: flex; gap: 2rem; flex-wrap: wrap; margin: 1.5rem 0; }
+    .charts img { max-width: 100%; border: 1px solid #ddd; border-radius: 6px; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee; }
+    .keyword-list { padding-left: 1.25rem; }
+    .insight { margin-bottom: 1rem; padding: 0.75rem 1rem; background: #f7f7f8; border-radius: 6px; }
+    .insight h3 { margin: 0 0 0.25rem; }
+    .badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.85rem; color: white; margin-right: 0.5rem; }
+    .badge.positive { background: #55A868; }
+    .badge.neutral { background: #8C8C8C; }
+    .badge.negative { background: #C44E52; }
+  </style>
+</head>
+<body>
+  <h1>App Store Review Report</h1>
+  <p class="meta">
+    App ID {{ sample.app_id }} &middot; {{ sample.country_code|upper }} store &middot;
+    {{ metrics.review_count }} reviews collected {{ sample.created_at.strftime("%Y-%m-%d %H:%M UTC") }}
+  </p>
+
+  <h2>Metrics</h2>
+  <p>Average rating: <strong>{{ "%.2f"|format(metrics.average_rating) }} / 5</strong></p>
+  <div class="charts">
+    <img src="data:image/png;base64,{{ rating_chart }}" alt="Rating distribution chart">
+    <img src="data:image/png;base64,{{ sentiment_chart }}" alt="Sentiment distribution chart">
+  </div>
+  <table>
+    <tr><th>Stars</th><th>Count</th><th>Percent</th></tr>
+    {% for star in [5, 4, 3, 2, 1] %}
+    <tr>
+      <td>{{ star }}&#9733;</td>
+      <td>{{ metrics.rating_distribution[star].count }}</td>
+      <td>{{ "%.1f"|format(metrics.rating_distribution[star].percent) }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h2>Sentiment</h2>
+  <p>
+    <span class="badge positive">{{ insight.sentiment_distribution.positive }} positive</span>
+    <span class="badge neutral">{{ insight.sentiment_distribution.neutral }} neutral</span>
+    <span class="badge negative">{{ insight.sentiment_distribution.negative }} negative</span>
+  </p>
+
+  {% if insight.sentiment_rating_disagreement %}
+  <h2>Rating / sentiment disagreements</h2>
+  <p>Reviews where the star rating and the text's sentiment don't match:</p>
+  <ul>
+    {% for d in insight.sentiment_rating_disagreement %}
+    <li>{{ d.rating }}&#9733; but <em>{{ d.sentiment }}</em> text &mdash; &ldquo;{{ d.title }}&rdquo;</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <h2>Common negative-review keywords</h2>
+  {% if insight.negative_keywords %}
+  <ul class="keyword-list">
+    {% for kw in insight.negative_keywords %}
+    <li>{{ kw.phrase }} ({{ kw.count }})</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No negative reviews (rating &le; 2) in this sample.</p>
+  {% endif %}
+
+  <h2>Actionable insights</h2>
+  {% if insight.actionable_insights %}
+  {% for a in insight.actionable_insights %}
+  <div class="insight">
+    <h3>{{ a.theme }}</h3>
+    <p>{{ a.suggestion }}</p>
+    <p><small>Based on {{ a.evidence_count }} review(s)</small></p>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p>Not enough negative-review signal to surface actionable insights.</p>
+  {% endif %}
+</body>
+</html>
