@@ -1,13 +1,13 @@
+import uuid
 from datetime import datetime
-from typing import Literal
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
-# TODO: DB layer (app/reviews/models.py) now uses a UUID PK with a separate
-# store_review_id; these API schemas still use a plain int id. Reconcile once
-# the service layer wires real persistence into routes.py.
 class Review(BaseModel):
-    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
     date: datetime
     user_name: str
     title: str
@@ -17,8 +17,10 @@ class Review(BaseModel):
 
 
 class ReviewsSample(BaseModel):
-    id: int
-    app_id: int
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    app_id: int  # Apple's numeric app id — distinct concept from our own PKs
     country_code: str = Field(
         pattern=r"^[a-z]{2}$", description="ISO 3166-1 alpha-2, e.g. 'us'"
     )
@@ -26,19 +28,9 @@ class ReviewsSample(BaseModel):
     reviews: list[Review]
 
 
-class ReviewsJobCreate(BaseModel):
-    app_id: int
+class ReviewsCollectRequest(BaseModel):
+    app_id: int = Field(gt=0)
     country_code: str = Field(
         pattern=r"^[a-z]{2}$", description="ISO 3166-1 alpha-2, e.g. 'us'"
     )
     sample_size: int = Field(default=100, ge=1, le=500)
-
-
-class ReviewsJobId(BaseModel):
-    job_id: int
-
-
-class ReviewsJob(BaseModel):
-    status: Literal["pending", "running", "done", "failed"]
-    sample_id: int | None = None
-    error: str | None = None

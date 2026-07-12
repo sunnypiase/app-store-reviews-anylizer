@@ -1,7 +1,14 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, text
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -13,7 +20,9 @@ class ReviewSample(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, server_default=text("gen_random_uuid()")
     )
-    app_id: Mapped[int]
+    # BigInteger: real App Store numeric app ids can exceed the 32-bit
+    # INTEGER range (2,147,483,647) as Apple's id space has grown.
+    app_id: Mapped[int] = mapped_column(BigInteger)
     country_code: Mapped[str] = mapped_column(String(2))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")

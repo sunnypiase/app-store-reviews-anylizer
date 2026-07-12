@@ -1,18 +1,26 @@
-from fastapi import APIRouter
+from uuid import UUID
+
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
+
+from app.dependencies import DbSession
+from app.insights import service as insight_service
+from app.metrics import service as metrics_service
+from app.reports import service
+from app.reviews import schemas as review_schemas
+from app.reviews import service as review_service
 
 report_router = APIRouter()
 
 
-@report_router.get("/{insight_id}", response_class=HTMLResponse)
-async def get_report(insight_id: int) -> HTMLResponse:
-    return HTMLResponse(
-        f"""<!doctype html>
-<html>
-<head><title>App Store Review Report</title></head>
-<body>
-<h1>Review analysis report (insight #{insight_id})</h1>
-<p>Mocked report — metrics, sentiment, keywords and actionable insights render here.</p>
-</body>
-</html>"""
-    )
+@report_router.get("/{sample_id}", response_class=HTMLResponse)
+async def get_report(sample_id: UUID, session: DbSession) -> HTMLResponse:
+    sample = await review_service.get_sample_with_reviews(session, sample_id)
+    if sample is None:
+        raise HTTPException(status_code=404, detail="Sample not found")
+    reviews = [review_schemas.Review.model_validate(review) for review in sample.reviews]
+    metrics = metrics_service.compute_metrics(sample_id, reviews)
+    insight = insight_service.compute_insights(sample_id, reviews)
+    sample_schema = review_schemas.ReviewsSample.model_validate(sample)
+    html = service.render_report(sample_schema, metrics, insight)
+    return HTMLResponse(html)
