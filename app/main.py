@@ -1,11 +1,13 @@
+from contextlib import asynccontextmanager
 import logging
 
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 
-from app.insights.routes import insight_router
+from app.database import engine
 from app.logging_config import setup_logging
+from app.insights.routes import insight_router
 from app.metrics.routes import metric_router
 from app.reports.routes import report_router
 from app.reviews.routes import review_router
@@ -15,7 +17,14 @@ logger = logging.getLogger(__name__)
 
 API_V1 = "/api/v1"
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await engine.dispose()
+
+
+app = FastAPI(lifespan=lifespan, title="App Store Review Analyzer", version="1.0.0")
 
 
 @app.exception_handler(RequestValidationError)
