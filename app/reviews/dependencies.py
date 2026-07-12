@@ -10,8 +10,13 @@ from app.reviews.appstore.reviews_client import AppStoreReviewsClient
 from app.reviews.collector import ReviewCollector
 
 
+def _get_appstore_client_config() -> AppStoreClientConfig:
+    return appstore_client_config
+
+
 def get_review_collector(
-    http: HttpClientDep, config: AppStoreClientConfig = appstore_client_config
+    http: HttpClientDep,
+    config: Annotated[AppStoreClientConfig, Depends(_get_appstore_client_config)],
 ) -> ReviewCollector:
     return AppStoreCollector(
         lookup=AppStoreLookupClient(
