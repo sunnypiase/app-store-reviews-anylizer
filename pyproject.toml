@@ -6,6 +6,7 @@ dependencies = [
     "alembic>=1.18.5",
     "asyncpg>=0.31.0",
     "fastapi[standard]>=0.139.0",
+    "google-genai>=1.0.0",
     "httpx>=0.28.1",
     "matplotlib>=3.10.0",
     "pydantic>=2.13.4",
@@ -30,5 +31,4 @@ dev = [
 ]
 eval = [
     "textblob>=0.18.0",
-    "google-genai>=1.0.0",
 ]

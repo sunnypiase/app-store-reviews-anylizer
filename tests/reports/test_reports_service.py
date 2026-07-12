@@ -39,10 +39,10 @@ def _sample_with_reviews() -> tuple[uuid.UUID, ReviewsSample, list[Review]]:
     return sample_id, sample, reviews
 
 
-def test_render_report_includes_metrics_and_insights_and_charts():
+async def test_render_report_includes_metrics_and_insights_and_charts():
     sample_id, sample, reviews = _sample_with_reviews()
     metrics = compute_metrics(sample_id, reviews)
-    insight = compute_insights(sample_id, reviews)
+    insight = await compute_insights(sample_id, reviews)
 
     html = render_report(sample, metrics, insight)
 
@@ -52,13 +52,13 @@ def test_render_report_includes_metrics_and_insights_and_charts():
     assert f"{metrics.average_rating:.2f}" in html
 
 
-def test_render_report_handles_sample_with_no_reviews():
+async def test_render_report_handles_sample_with_no_reviews():
     sample_id = uuid.uuid4()
     sample = ReviewsSample(
         id=sample_id, app_id=123, country_code="us", created_at=datetime.now(timezone.utc), reviews=[]
     )
     metrics = compute_metrics(sample_id, [])
-    insight = compute_insights(sample_id, [])
+    insight = await compute_insights(sample_id, [])
 
     html = render_report(sample, metrics, insight)
 
