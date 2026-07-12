@@ -1,0 +1,15 @@
+.venv
+.git
+.gitignore
+.env
+.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+docs/
+*.md
+tasks.txt
+sentiment.txt
+response_1783787675183.json
+.claude/

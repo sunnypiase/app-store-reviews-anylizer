@@ -3,6 +3,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+# TODO: DB layer (app/reviews/models.py) now uses a UUID PK with a separate
+# store_review_id; these API schemas still use a plain int id. Reconcile once
+# the service layer wires real persistence into routes.py.
 class Review(BaseModel):
     id: int
     date: datetime
