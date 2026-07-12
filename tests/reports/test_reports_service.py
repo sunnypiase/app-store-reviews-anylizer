@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from app.insights.schemas import ActionableInsight, Insight, SentimentDistribution
+from app.insights.schemas import ActionableInsight, Disagreement, Insight, SentimentDistribution
 from app.insights.service import compute_insights
 from app.metrics.service import compute_metrics
 from app.reports.service import render_report
@@ -59,12 +59,13 @@ def _insight_with(
     executive_summary: str,
     source: str,
     actionable_insights: list[ActionableInsight],
+    disagreements: list[Disagreement] | None = None,
 ) -> Insight:
     return Insight(
         sample_id=sample_id,
         review_count=2,
         sentiment_distribution=SentimentDistribution(positive=0, neutral=0, negative=2),
-        sentiment_rating_disagreement=[],
+        sentiment_rating_disagreement=disagreements or [],
         negative_keywords=[],
         actionable_insights=actionable_insights,
         executive_summary=executive_summary,
@@ -99,6 +100,33 @@ async def test_render_report_shows_executive_summary_source_and_evidence():
     for review in reviews:
         assert review.title in html
         assert review.content in html
+
+
+async def test_render_report_disagreements_include_review_text():
+    sample_id, sample, reviews = _sample_with_reviews()
+    metrics = compute_metrics(sample_id, reviews)
+    low_rating_positive = reviews[0]
+    insight = _insight_with(
+        sample_id,
+        executive_summary="Summary.",
+        source="none",
+        actionable_insights=[],
+        disagreements=[
+            Disagreement(
+                review_id=low_rating_positive.id,
+                rating=low_rating_positive.rating,
+                sentiment="positive",
+                title=low_rating_positive.title,
+            )
+        ],
+    )
+
+    html = render_report(sample, metrics, insight)
+
+    assert "Rating / sentiment disagreements" in html
+    assert low_rating_positive.title in html
+    # The disagreement row shows the review's text, not just its title.
+    assert low_rating_positive.content in html
 
 
 async def test_render_report_shows_fallback_source_label():

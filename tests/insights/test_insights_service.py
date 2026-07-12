@@ -176,6 +176,22 @@ async def test_negative_keywords_exclude_contraction_fragments():
     assert "money" in phrases
 
 
+async def test_negative_keywords_exclude_price_number_fragments():
+    reviews = [
+        _review(rating=1, title="Expensive", content="They charged me 4.99 and then 9.99 more"),
+        _review(rating=1, title="Pricey", content="4.99 a week is a scam, charged me again"),
+        _review(rating=1, title="Overpriced", content="Charged 9.99 for nothing, what a scam"),
+        _review(rating=5, title="Great", content="This app is fantastic, I use it every day"),
+    ]
+
+    insight = await compute_insights(uuid.uuid4(), reviews)
+
+    phrases = {kw.phrase for kw in insight.negative_keywords}
+    # Price fragments ("99" from "4.99") must never surface as keywords.
+    assert not any(any(char.isdigit() for char in phrase) for phrase in phrases)
+    assert "charged" in phrases
+
+
 async def test_negative_keywords_group_inflectional_variants():
     reviews = [
         _review(rating=1, title="Charged twice", content="They charged me twice, unacceptable"),

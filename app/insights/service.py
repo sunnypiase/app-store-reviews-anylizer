@@ -1,11 +1,10 @@
 import logging
-import re
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 
 import numpy as np
-from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from app.insights.gemini_classifier import GeminiClassificationError, GeminiSentimentClassifier
@@ -26,6 +25,14 @@ from app.insights.schemas import (
     Sentiment,
     SentimentDistribution,
 )
+from app.insights.text_preparation import (
+    STOP_WORDS,
+    TOKEN_PATTERN,
+    normalize_text,
+    stem,
+    stem_phrase,
+    stemmed_tokens,
+)
 from app.reviews import schemas as review_schemas
 
 logger = logging.getLogger(__name__)
@@ -39,60 +46,9 @@ _NEGATIVE_RATING_THRESHOLD = 2
 _TOP_KEYWORD_COUNT = 10
 _TOP_ACTIONABLE_INSIGHTS = 3
 
-# Apostrophes are stripped before tokenization (see _normalize_text), so
-# contractions arrive as single tokens ("dont", "cant") instead of the junk
-# fragments sklearn's default tokenizer would produce ("don", "t") — these
-# apostrophe-less forms then need their own stopword entries.
-_CONTRACTION_STOP_WORDS = {
-    "aint", "arent", "cant", "cannot", "couldnt", "couldve", "didnt", "doesnt",
-    "dont", "hadnt", "hasnt", "havent", "hes", "id", "ill", "im", "isnt",
-    "its", "ive", "shes", "shouldnt", "shouldve", "thats", "theres", "theyd",
-    "theyll", "theyre", "theyve", "wasnt", "werent", "whats", "wont",
-    "wouldnt", "wouldve", "youd", "youll", "youre", "youve",
-}
-
-# "app"/"apps" carry no discriminative signal in a corpus that is, by
-# definition, entirely reviews of one app — generic on top of sklearn's
-# English stopword list, unlike e.g. the app's own name, which is left in
-# since it can still co-occur with genuinely distinctive complaints.
-_STOP_WORDS = list(ENGLISH_STOP_WORDS | _CONTRACTION_STOP_WORDS | {"app", "apps", "application"})
-
-_WORD_PATTERN = re.compile(r"[a-z]{2,}")
-
 
 def _review_text(review: review_schemas.Review) -> str:
     return f"{review.title} {review.content}"
-
-
-def _normalize_text(text: str) -> str:
-    """Lowercase and drop apostrophes so "don't"/"don’t" become "dont" rather
-    than splitting into meaningless fragments at tokenization time."""
-    return text.lower().replace("'", "").replace("’", "")
-
-
-def _stem(token: str) -> str:
-    """Light suffix-stripping stem, just aggressive enough to group
-    inflections of one complaint ("charge"/"charged"/"charging"/"charges",
-    "canceled"/"cancelled") under a single key. Stems are grouping keys only
-    and never shown to users — display always uses a real surface form.
-    """
-    for suffix in ("ing", "ed", "es", "s"):
-        if token.endswith(suffix) and len(token) - len(suffix) >= 3:
-            token = token[: -len(suffix)]
-            break
-    if len(token) >= 4 and token[-1] == token[-2]:
-        token = token[:-1]
-    if len(token) >= 4 and token.endswith("e"):
-        token = token[:-1]
-    return token
-
-
-def _stem_phrase(phrase: str) -> str:
-    return " ".join(_stem(token) for token in phrase.split())
-
-
-def _stemmed_tokens(text: str) -> set[str]:
-    return {_stem(token) for token in _WORD_PATTERN.findall(_normalize_text(text))}
 
 
 def classify_sentiment_vader(review: review_schemas.Review) -> Sentiment:
@@ -185,11 +141,17 @@ def extract_negative_keywords(
     # negative reviews specifically should score high. Fitting IDF on the
     # negative subset alone can't tell "ubiquitous" from "distinctively
     # negative" apart.
+    # Normalization, tokenization, and stopwords all come from
+    # app.insights.text_preparation so sklearn sees exactly the same tokens
+    # as the rest of the pipeline — in particular, the letters-only
+    # TOKEN_PATTERN keeps price fragments like the "99" in "$4.99" out of
+    # the vocabulary (sklearn's default pattern would admit them).
     vectorizer = TfidfVectorizer(
         ngram_range=(1, 2),
-        stop_words=_STOP_WORDS,
+        stop_words=STOP_WORDS,
         max_features=500,
-        preprocessor=_normalize_text,
+        preprocessor=normalize_text,
+        token_pattern=TOKEN_PATTERN,
     )
     try:
         vectorizer.fit([_review_text(review) for review in reviews])
@@ -208,7 +170,7 @@ def extract_negative_keywords(
     # counts reviews containing *any* variant.
     groups: dict[str, _KeywordGroup] = {}
     for idx, term in enumerate(vectorizer.get_feature_names_out()):
-        groups.setdefault(_stem_phrase(term), _KeywordGroup()).add(
+        groups.setdefault(stem_phrase(term), _KeywordGroup()).add(
             term, float(scores[idx]), presence[:, idx]
         )
     ranked = sorted(groups.values(), key=lambda group: group.score, reverse=True)[:top_n]
@@ -228,7 +190,7 @@ def build_actionable_insights(
     insights: list[ActionableInsight] = []
     chosen_stems: set[str] = set()
     review_stems = [
-        (review, _stemmed_tokens(_review_text(review))) for review in negative_reviews
+        (review, stemmed_tokens(_review_text(review))) for review in negative_reviews
     ]
     # Prefer multi-word phrases as themes: a bigram like "customer service"
     # is more specific than its own component words, which otherwise tend to
@@ -237,7 +199,7 @@ def build_actionable_insights(
     for keyword in theme_candidates:
         if len(insights) >= top_n:
             break
-        phrase_stems = {_stem(token) for token in keyword.phrase.split()}
+        phrase_stems = {stem(token) for token in keyword.phrase.split()}
         if phrase_stems & chosen_stems:
             continue
         # Stem-based matching so a review saying "charging" counts as

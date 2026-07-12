@@ -145,9 +145,9 @@
     }
     .evidence .stars { color: var(--ink-muted); font-size: 0.85rem; letter-spacing: 0.1em; }
     .evidence .stars .filled { color: #eda100; }
-    .evidence .review-title { font-weight: 600; }
-    .evidence .review-meta { color: var(--ink-muted); font-size: 0.8rem; }
-    .evidence .review-excerpt { color: var(--ink-secondary); font-size: 0.9rem; margin: 0.15rem 0 0; }
+    .review-title { font-weight: 600; }
+    .review-meta { color: var(--ink-muted); font-size: 0.8rem; }
+    .review-excerpt { color: var(--ink-secondary); font-size: 0.9rem; margin: 0.15rem 0 0; }
 
     .empty-note { color: var(--ink-muted); }
 
@@ -245,12 +245,16 @@
   <h2>Rating / sentiment disagreements</h2>
   <p class="empty-note">Reviews where the star rating and the text&rsquo;s sentiment don&rsquo;t match — often the most revealing feedback.</p>
   <table>
-    <tr><th>Rating</th><th>Text sentiment</th><th>Review title</th></tr>
+    <tr><th>Rating</th><th>Text sentiment</th><th>Review</th></tr>
     {% for d in insight.sentiment_rating_disagreement %}
+    {% set review = reviews_by_id.get(d.review_id) %}
     <tr>
       <td class="num">{{ d.rating }}&#9733;</td>
       <td>{{ d.sentiment }}</td>
-      <td>{{ d.title }}</td>
+      <td>
+        <span class="review-title">{{ d.title }}</span>
+        {% if review %}<p class="review-excerpt">{{ review.content|truncate(320) }}</p>{% endif %}
+      </td>
     </tr>
     {% endfor %}
   </table>
