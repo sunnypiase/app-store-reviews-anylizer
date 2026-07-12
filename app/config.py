@@ -19,5 +19,16 @@ class AppStoreClientConfig(BaseConfig):
     request_timeout_seconds: float = 10.0
 
 
+class GeminiConfig(BaseConfig):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="GEMINI_")
+
+    api_key: str = ""
+    # gemini-flash-latest's free tier is capped at 20 requests/day (unusable
+    # at request-serving scale); flash-lite's free tier is 15
+    # requests/minute, which comfortably covers this API's traffic.
+    model_name: str = "gemini-flash-lite-latest"
+
+
 db_config = DBConfig()
 appstore_client_config = AppStoreClientConfig()
+gemini_config = GeminiConfig()

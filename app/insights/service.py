@@ -1,9 +1,11 @@
+import logging
 import uuid
 from collections import Counter
 
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+from app.insights.gemini_classifier import GeminiClassificationError, GeminiSentimentClassifier
 from app.insights.schemas import (
     ActionableInsight,
     Disagreement,
@@ -13,6 +15,8 @@ from app.insights.schemas import (
     SentimentDistribution,
 )
 from app.reviews import schemas as review_schemas
+
+logger = logging.getLogger(__name__)
 
 _analyzer = SentimentIntensityAnalyzer()
 
@@ -35,7 +39,7 @@ def _review_text(review: review_schemas.Review) -> str:
     return f"{review.title} {review.content}"
 
 
-def classify_sentiment(review: review_schemas.Review) -> Sentiment:
+def classify_sentiment_vader(review: review_schemas.Review) -> Sentiment:
     """VADER's standard compound-score thresholds for 3-way bucketing."""
     compound = _analyzer.polarity_scores(_review_text(review))["compound"]
     if compound >= 0.05:
@@ -43,6 +47,27 @@ def classify_sentiment(review: review_schemas.Review) -> Sentiment:
     if compound <= -0.05:
         return "negative"
     return "neutral"
+
+
+async def classify_sentiments(
+    reviews: list[review_schemas.Review],
+    gemini_classifier: GeminiSentimentClassifier | None,
+) -> list[Sentiment]:
+    """Gemini, when configured, with an automatic VADER fallback -- keeps
+    the endpoint usable without an API key and resilient to Gemini being
+    down, at the cost of degraded accuracy (see
+    docs/SENTIMENT_ANALYSIS_RESULTS.md for the accuracy gap).
+    """
+    if gemini_classifier is not None:
+        try:
+            sentiment_by_id = await gemini_classifier.classify(reviews)
+        except GeminiClassificationError:
+            logger.warning(
+                "Gemini sentiment classification failed, falling back to VADER", exc_info=True
+            )
+        else:
+            return [sentiment_by_id[review.id] for review in reviews]
+    return [classify_sentiment_vader(review) for review in reviews]
 
 
 def compute_sentiment_distribution(sentiments: list[Sentiment]) -> SentimentDistribution:
@@ -143,8 +168,12 @@ def build_actionable_insights(
     return insights
 
 
-def compute_insights(sample_id: uuid.UUID, reviews: list[review_schemas.Review]) -> Insight:
-    sentiments = [classify_sentiment(review) for review in reviews]
+async def compute_insights(
+    sample_id: uuid.UUID,
+    reviews: list[review_schemas.Review],
+    gemini_classifier: GeminiSentimentClassifier | None = None,
+) -> Insight:
+    sentiments = await classify_sentiments(reviews, gemini_classifier)
     negative_reviews = [review for review in reviews if review.rating <= _NEGATIVE_RATING_THRESHOLD]
     negative_keywords = extract_negative_keywords(reviews, negative_reviews)
     return Insight(
