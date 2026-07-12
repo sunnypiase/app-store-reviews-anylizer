@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import Base, get_db_session
+from app.dependencies import get_http_client
 from app.main import app as fastapi_app
 from app.reviews import models as reviews_models  # noqa: F401 - registers tables on Base.metadata
 from app.reviews.models import Review, ReviewSample
@@ -49,7 +50,9 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     """
     async with test_engine.connect() as conn:
         async with conn.begin() as outer_transaction:
-            session = AsyncSession(bind=conn, join_transaction_mode="create_savepoint")
+            session = AsyncSession(
+                bind=conn, join_transaction_mode="create_savepoint", expire_on_commit=False
+            )
             yield session
             await session.close()
             await outer_transaction.rollback()
@@ -61,12 +64,17 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     `db_session` (rolled back per test). Deliberately skips ASGI lifespan
     (no real Postgres ping, no httpx.AsyncClient on app.state) — route tests
     that hit the App Store client must override `get_review_collector`
-    themselves with a fake.
+    themselves with a fake. `get_http_client` is stubbed out here too: it's
+    a sub-dependency of `get_review_collector`, and FastAPI resolves a
+    dependant's sub-dependencies from its original signature even when the
+    dependant itself is overridden, so leaving it unset would still try
+    (and fail) to read the lifespan-only `app.state.http_client`.
     """
     async def _override_get_db_session() -> AsyncIterator[AsyncSession]:
         yield db_session
 
     fastapi_app.dependency_overrides[get_db_session] = _override_get_db_session
+    fastapi_app.dependency_overrides[get_http_client] = lambda: None
     async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="http://test") as ac:
         yield ac
     fastapi_app.dependency_overrides.clear()
