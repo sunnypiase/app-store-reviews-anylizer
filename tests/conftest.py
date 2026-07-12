@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.database import Base, get_db_session
 from app.dependencies import get_http_client
-from app.insights.dependencies import get_sentiment_classifier
+from app.insights.dependencies import get_insight_generator, get_sentiment_classifier
 from app.main import app as fastapi_app
 from app.reviews import models as reviews_models  # noqa: F401 - registers tables on Base.metadata
 from app.reviews.models import Review, ReviewSample
@@ -71,11 +71,11 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     dependant itself is overridden, so leaving it unset would still try
     (and fail) to read the lifespan-only `app.state.http_client`.
 
-    `get_sentiment_classifier` defaults to `None` (VADER fallback) here too:
-    `.env` has a real `GEMINI_API_KEY` for the eval scripts, so leaving this
-    unstubbed would make every insights/reports test that doesn't care about
-    Gemini fire a real network call. Tests exercising the Gemini path
-    override it themselves with a fake.
+    `get_sentiment_classifier` and `get_insight_generator` default to `None`
+    (local fallbacks) here too: `.env` has a real `GEMINI_API_KEY` for the
+    eval scripts, so leaving these unstubbed would make every insights/reports
+    test that doesn't care about Gemini fire a real network call. Tests
+    exercising the Gemini paths override them themselves with fakes.
     """
     async def _override_get_db_session() -> AsyncIterator[AsyncSession]:
         yield db_session
@@ -83,6 +83,7 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     fastapi_app.dependency_overrides[get_db_session] = _override_get_db_session
     fastapi_app.dependency_overrides[get_http_client] = lambda: None
     fastapi_app.dependency_overrides[get_sentiment_classifier] = lambda: None
+    fastapi_app.dependency_overrides[get_insight_generator] = lambda: None
     async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="http://test") as ac:
         yield ac
     fastapi_app.dependency_overrides.clear()
