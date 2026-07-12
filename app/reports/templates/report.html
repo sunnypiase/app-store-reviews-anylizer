@@ -2,22 +2,160 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>App Store Review Report — App {{ sample.app_id }}</title>
   <style>
-    body { font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
-    h1, h2, h3 { color: #222; }
-    .meta { color: #555; margin-bottom: 2rem; }
-    .charts { display: flex; gap: 2rem; flex-wrap: wrap; margin: 1.5rem 0; }
-    .charts img { max-width: 100%; border: 1px solid #ddd; border-radius: 6px; }
-    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee; }
-    .keyword-list { padding-left: 1.25rem; }
-    .insight { margin-bottom: 1rem; padding: 0.75rem 1rem; background: #f7f7f8; border-radius: 6px; }
-    .insight h3 { margin: 0 0 0.25rem; }
-    .badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.85rem; color: white; margin-right: 0.5rem; }
-    .badge.positive { background: #55A868; }
-    .badge.neutral { background: #8C8C8C; }
-    .badge.negative { background: #C44E52; }
+    :root {
+      --ink: #0b0b0b;
+      --ink-secondary: #52514e;
+      --ink-muted: #898781;
+      --hairline: rgba(11, 11, 11, 0.10);
+      --gridline: #e1e0d9;
+      --surface: #ffffff;
+      --plane: #f9f9f7;
+      --blue: #2a78d6;
+      --positive: #0ca30c;
+      --neutral: #898781;
+      --negative: #d03b3b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--surface);
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+      line-height: 1.55;
+      font-size: 15px;
+    }
+    h1 { font-size: 1.7rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
+    h2 {
+      font-size: 1.15rem;
+      margin: 2.75rem 0 1rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--gridline);
+      page-break-after: avoid;
+    }
+    .meta { color: var(--ink-muted); margin: 0 0 2rem; font-size: 0.92rem; }
+
+    /* ---- Stat tiles ---- */
+    .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+    .tile {
+      border: 1px solid var(--hairline);
+      border-radius: 10px;
+      padding: 0.8rem 1rem;
+      background: var(--plane);
+      page-break-inside: avoid;
+    }
+    .tile .value { font-size: 1.5rem; font-weight: 650; line-height: 1.2; }
+    .tile .label { color: var(--ink-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.15rem; }
+    .tile .value.positive { color: var(--positive); }
+    .tile .value.negative { color: var(--negative); }
+
+    /* ---- Executive summary ---- */
+    .summary-card {
+      border: 1px solid var(--hairline);
+      border-left: 4px solid var(--blue);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0 0;
+      background: var(--plane);
+      page-break-inside: avoid;
+    }
+    .summary-card p { margin: 0.4rem 0 0; font-size: 1.02rem; }
+    .source-note {
+      display: inline-block;
+      padding: 0.1rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      border: 1px solid var(--hairline);
+      color: var(--ink-secondary);
+      background: var(--surface);
+    }
+
+    /* ---- Charts ---- */
+    .charts { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
+    .charts figure {
+      flex: 1 1 340px;
+      margin: 0;
+      border: 1px solid var(--hairline);
+      border-radius: 10px;
+      padding: 0.75rem;
+      page-break-inside: avoid;
+    }
+    .charts img { width: 100%; height: auto; display: block; }
+
+    /* ---- Sentiment split bar ---- */
+    .split-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: 0.75rem 0 0.4rem; background: var(--gridline); }
+    .split-bar span { display: block; height: 100%; }
+    .split-bar .positive { background: var(--positive); }
+    .split-bar .neutral { background: var(--neutral); }
+    .split-bar .negative { background: var(--negative); }
+    .split-legend { display: flex; gap: 1.25rem; color: var(--ink-secondary); font-size: 0.88rem; flex-wrap: wrap; }
+    .split-legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 0.35rem; }
+
+    /* ---- Tables ---- */
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.92rem; }
+    th { text-align: left; color: var(--ink-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    th, td { padding: 0.45rem 0.75rem; border-bottom: 1px solid var(--gridline); }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .table-bar { display: inline-block; height: 9px; border-radius: 4px; background: var(--blue); vertical-align: middle; }
+
+    /* ---- Keyword chips ---- */
+    .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0; }
+    .chip {
+      border: 1px solid var(--hairline);
+      background: var(--plane);
+      border-radius: 999px;
+      padding: 0.25rem 0.8rem;
+      font-size: 0.9rem;
+    }
+    .chip .count { color: var(--ink-muted); font-size: 0.82rem; margin-left: 0.35rem; font-variant-numeric: tabular-nums; }
+
+    /* ---- Insight cards & evidence ---- */
+    .insight-card {
+      border: 1px solid var(--hairline);
+      border-radius: 10px;
+      padding: 1.1rem 1.3rem;
+      margin: 1rem 0;
+    }
+    .insight-card > h3 { margin: 0; font-size: 1.05rem; page-break-after: avoid; }
+    .insight-card .evidence-pill {
+      float: right;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--ink-secondary);
+      border: 1px solid var(--hairline);
+      background: var(--plane);
+      border-radius: 999px;
+      padding: 0.1rem 0.65rem;
+      white-space: nowrap;
+    }
+    .insight-card .suggestion { margin: 0.5rem 0 0; color: var(--ink-secondary); }
+    .evidence-heading { margin: 1.1rem 0 0.25rem; font-size: 0.8rem; font-weight: 600; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .evidence { list-style: none; margin: 0; padding: 0; }
+    .evidence li {
+      border-left: 3px solid var(--gridline);
+      padding: 0.45rem 0 0.45rem 0.9rem;
+      margin: 0.5rem 0;
+      page-break-inside: avoid;
+    }
+    .evidence .stars { color: var(--ink-muted); font-size: 0.85rem; letter-spacing: 0.1em; }
+    .evidence .stars .filled { color: #eda100; }
+    .evidence .review-title { font-weight: 600; }
+    .evidence .review-meta { color: var(--ink-muted); font-size: 0.8rem; }
+    .evidence .review-excerpt { color: var(--ink-secondary); font-size: 0.9rem; margin: 0.15rem 0 0; }
+
+    .empty-note { color: var(--ink-muted); }
+
+    @media print {
+      body { padding: 0; font-size: 12.5px; max-width: none; }
+      .tiles { gap: 0.5rem; }
+    }
+    @page { margin: 1.6cm; }
   </style>
 </head>
 <body>
@@ -27,62 +165,121 @@
     {{ metrics.review_count }} reviews collected {{ sample.created_at.strftime("%Y-%m-%d %H:%M UTC") }}
   </p>
 
-  <h2>Metrics</h2>
-  <p>Average rating: <strong>{{ "%.2f"|format(metrics.average_rating) }} / 5</strong></p>
-  <div class="charts">
-    <img src="data:image/png;base64,{{ rating_chart }}" alt="Rating distribution chart">
-    <img src="data:image/png;base64,{{ sentiment_chart }}" alt="Sentiment distribution chart">
+  <div class="tiles">
+    <div class="tile">
+      <div class="value">{{ metrics.review_count }}</div>
+      <div class="label">Reviews</div>
+    </div>
+    <div class="tile">
+      <div class="value">{{ "%.2f"|format(metrics.average_rating) }}</div>
+      <div class="label">Average rating</div>
+    </div>
+    <div class="tile">
+      <div class="value positive">{{ "%.0f"|format(sentiment_percent.positive) }}%</div>
+      <div class="label">Positive sentiment</div>
+    </div>
+    <div class="tile">
+      <div class="value negative">{{ "%.0f"|format(sentiment_percent.negative) }}%</div>
+      <div class="label">Negative sentiment</div>
+    </div>
   </div>
-  <table>
-    <tr><th>Stars</th><th>Count</th><th>Percent</th></tr>
-    {% for star in [5, 4, 3, 2, 1] %}
-    <tr>
-      <td>{{ star }}&#9733;</td>
-      <td>{{ metrics.rating_distribution[star].count }}</td>
-      <td>{{ "%.1f"|format(metrics.rating_distribution[star].percent) }}%</td>
-    </tr>
-    {% endfor %}
-  </table>
 
-  <h2>Sentiment</h2>
-  <p>
-    <span class="badge positive">{{ insight.sentiment_distribution.positive }} positive</span>
-    <span class="badge neutral">{{ insight.sentiment_distribution.neutral }} neutral</span>
-    <span class="badge negative">{{ insight.sentiment_distribution.negative }} negative</span>
-  </p>
-
-  {% if insight.sentiment_rating_disagreement %}
-  <h2>Rating / sentiment disagreements</h2>
-  <p>Reviews where the star rating and the text's sentiment don't match:</p>
-  <ul>
-    {% for d in insight.sentiment_rating_disagreement %}
-    <li>{{ d.rating }}&#9733; but <em>{{ d.sentiment }}</em> text &mdash; &ldquo;{{ d.title }}&rdquo;</li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
-  <h2>Common negative-review keywords</h2>
-  {% if insight.negative_keywords %}
-  <ul class="keyword-list">
-    {% for kw in insight.negative_keywords %}
-    <li>{{ kw.phrase }} ({{ kw.count }})</li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p>No negative reviews (rating &le; 2) in this sample.</p>
-  {% endif %}
+  <h2>Executive summary</h2>
+  <div class="summary-card">
+    <span class="source-note">
+      {%- if insight.actionable_insights_source == "gemini" %}Gemini analysis
+      {%- elif insight.actionable_insights_source == "rule_based_fallback" %}Local fallback
+      {%- else %}No complaint signal
+      {%- endif %}
+    </span>
+    <p>{{ insight.executive_summary }}</p>
+  </div>
 
   <h2>Actionable insights</h2>
   {% if insight.actionable_insights %}
   {% for a in insight.actionable_insights %}
-  <div class="insight">
+  <div class="insight-card">
+    <span class="evidence-pill">Based on {{ a.evidence_count }} review(s)</span>
     <h3>{{ a.theme }}</h3>
-    <p>{{ a.suggestion }}</p>
-    <p><small>Based on {{ a.evidence_count }} review(s)</small></p>
+    <p class="suggestion">{{ a.suggestion }}</p>
+    <p class="evidence-heading">Evidence — all {{ a.evidence_count }} supporting review(s)</p>
+    <ul class="evidence">
+      {% for review_id in a.evidence_review_ids %}
+      {% set review = reviews_by_id.get(review_id) %}
+      {% if review %}
+      <li>
+        <span class="stars"><span class="filled">{{ "★" * review.rating }}</span>{{ "☆" * (5 - review.rating) }}</span>
+        <span class="review-title">{{ review.title }}</span>
+        <span class="review-meta">&middot; {{ review.date.strftime("%Y-%m-%d") }} &middot; v{{ review.app_version }}</span>
+        <p class="review-excerpt">{{ review.content|truncate(320) }}</p>
+      </li>
+      {% else %}
+      <li><span class="review-meta">Review {{ review_id }}</span></li>
+      {% endif %}
+      {% endfor %}
+    </ul>
   </div>
   {% endfor %}
   {% else %}
-  <p>Not enough negative-review signal to surface actionable insights.</p>
+  <p class="empty-note">Not enough negative-review signal to surface actionable insights.</p>
+  {% endif %}
+
+  <h2>Sentiment</h2>
+  <div class="split-bar">
+    {% if insight.sentiment_distribution.positive %}<span class="positive" style="width: {{ sentiment_percent.positive }}%"></span>{% endif %}
+    {% if insight.sentiment_distribution.neutral %}<span class="neutral" style="width: {{ sentiment_percent.neutral }}%"></span>{% endif %}
+    {% if insight.sentiment_distribution.negative %}<span class="negative" style="width: {{ sentiment_percent.negative }}%"></span>{% endif %}
+  </div>
+  <div class="split-legend">
+    <span><span class="swatch" style="background: var(--positive)"></span>{{ insight.sentiment_distribution.positive }} positive</span>
+    <span><span class="swatch" style="background: var(--neutral)"></span>{{ insight.sentiment_distribution.neutral }} neutral</span>
+    <span><span class="swatch" style="background: var(--negative)"></span>{{ insight.sentiment_distribution.negative }} negative</span>
+  </div>
+
+  <div class="charts">
+    <figure><img src="data:image/png;base64,{{ sentiment_chart }}" alt="Sentiment distribution chart"></figure>
+    <figure><img src="data:image/png;base64,{{ rating_chart }}" alt="Rating distribution chart"></figure>
+  </div>
+
+  {% if insight.sentiment_rating_disagreement %}
+  <h2>Rating / sentiment disagreements</h2>
+  <p class="empty-note">Reviews where the star rating and the text&rsquo;s sentiment don&rsquo;t match — often the most revealing feedback.</p>
+  <table>
+    <tr><th>Rating</th><th>Text sentiment</th><th>Review title</th></tr>
+    {% for d in insight.sentiment_rating_disagreement %}
+    <tr>
+      <td class="num">{{ d.rating }}&#9733;</td>
+      <td>{{ d.sentiment }}</td>
+      <td>{{ d.title }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h2>Ratings breakdown</h2>
+  {% set max_count = [metrics.rating_distribution[5].count, metrics.rating_distribution[4].count, metrics.rating_distribution[3].count, metrics.rating_distribution[2].count, metrics.rating_distribution[1].count, 1]|max %}
+  <table>
+    <tr><th>Stars</th><th class="num">Count</th><th class="num">Percent</th><th></th></tr>
+    {% for star in [5, 4, 3, 2, 1] %}
+    <tr>
+      <td>{{ star }}&#9733;</td>
+      <td class="num">{{ metrics.rating_distribution[star].count }}</td>
+      <td class="num">{{ "%.1f"|format(metrics.rating_distribution[star].percent) }}%</td>
+      <td style="width: 40%"><span class="table-bar" style="width: {{ 100 * metrics.rating_distribution[star].count / max_count }}%"></span></td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h2>Common negative-review keywords</h2>
+  {% if insight.negative_keywords %}
+  <p class="empty-note">Terms concentrated in low-rated (&le; 2&#9733;) reviews, with the number of reviews mentioning each.</p>
+  <div class="chips">
+    {% for kw in insight.negative_keywords %}
+    <span class="chip">{{ kw.phrase }}<span class="count">&times;{{ kw.count }}</span></span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-note">No negative reviews (rating &le; 2) in this sample.</p>
   {% endif %}
 </body>
 </html>

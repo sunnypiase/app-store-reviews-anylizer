@@ -4,6 +4,13 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Sentiment = Literal["positive", "neutral", "negative"]
+ActionableInsightsSource = Literal["gemini", "rule_based_fallback", "none"]
+
+# Hard caps on model-influenced text in the public contract; anything longer
+# is truncated by the service before the response model is constructed.
+THEME_MAX_LENGTH = 120
+SUGGESTION_MAX_LENGTH = 1000
+EXECUTIVE_SUMMARY_MAX_LENGTH = 600
 
 
 class SentimentDistribution(BaseModel):
@@ -27,10 +34,12 @@ class NegativeKeyword(BaseModel):
 
 
 class ActionableInsight(BaseModel):
-    theme: str
+    theme: str = Field(max_length=THEME_MAX_LENGTH)
     evidence_count: int = Field(ge=1)
-    suggestion: str
-    example_review_ids: list[uuid.UUID]
+    suggestion: str = Field(max_length=SUGGESTION_MAX_LENGTH)
+    evidence_review_ids: list[uuid.UUID] = Field(
+        description="Every review supporting this theme, not a truncated sample"
+    )
 
 
 class Insight(BaseModel):
@@ -40,3 +49,5 @@ class Insight(BaseModel):
     sentiment_rating_disagreement: list[Disagreement]
     negative_keywords: list[NegativeKeyword]
     actionable_insights: list[ActionableInsight]
+    executive_summary: str = Field(max_length=EXECUTIVE_SUMMARY_MAX_LENGTH)
+    actionable_insights_source: ActionableInsightsSource
