@@ -6,8 +6,7 @@ from pydantic import BaseModel, Field
 Sentiment = Literal["positive", "neutral", "negative"]
 ActionableInsightsSource = Literal["gemini", "rule_based_fallback", "none"]
 
-# Hard caps on model-influenced text in the public contract; anything longer
-# is truncated by the service before the response model is constructed.
+# Hard caps on model-influenced text; the service truncates before building the response.
 THEME_MAX_LENGTH = 120
 SUGGESTION_MAX_LENGTH = 1000
 EXECUTIVE_SUMMARY_MAX_LENGTH = 600

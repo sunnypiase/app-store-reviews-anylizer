@@ -1,9 +1,5 @@
-"""Gemini-backed sentiment classification for the live insights endpoint.
-
-Batching/retry approach ported from the eval tooling
-(scripts/sentiment_eval/gemini_sentiment.py), adapted to the async
-`google-genai` client so the insights pipeline stays non-blocking.
-"""
+"""Gemini-backed sentiment classification, ported from the eval tooling
+(scripts/sentiment_eval/gemini_sentiment.py) to the async client."""
 
 import asyncio
 import json
@@ -22,14 +18,12 @@ from app.reviews import schemas as review_schemas
 
 logger = logging.getLogger(__name__)
 
-_BATCH_SIZE = 150
+_BATCH_SIZE = 100
 _MAX_ATTEMPTS = 4
 _BASE_DELAY_SECONDS = 10.0
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
-# Only title/content are ever sent to Gemini -- never the star rating -- so
-# the classifier can't take a shortcut that a real deployment (rating
-# unknown at review time) wouldn't have.
+# Only title/content are sent — never the star rating — so the classifier can't shortcut.
 _PROMPT_TEMPLATE = """You are classifying App Store review sentiment.
 For each review below, decide whether the sentiment expressed in the title \
 and content is "positive", "negative", or "neutral" (mixed or no clear \
@@ -49,8 +43,7 @@ class _ReviewSentiment(BaseModel):
 
 
 class GeminiClassificationError(Exception):
-    """Gemini failed to classify a batch after retries, or returned a
-    response that doesn't cover every review that was sent."""
+    """Batch failed after retries, or the response doesn't cover every review sent."""
 
 
 def _render_batch(reviews: list[review_schemas.Review]) -> str:

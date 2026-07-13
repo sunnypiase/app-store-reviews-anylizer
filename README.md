@@ -1,218 +1,98 @@
 # App Store Review Analyzer
 
-FastAPI service for collecting and analyzing App Store reviews.
+REST API that collects App Store reviews for a given app, computes rating
+metrics, runs sentiment analysis, and produces an HTML report with
+actionable, evidence-backed insights.
 
-## Running with Docker (recommended)
+**Stack:** FastAPI · PostgreSQL · SQLAlchemy/Alembic · Gemini (sentiment +
+insights, with local fallbacks) · matplotlib (charts).
 
-The stack is Postgres + the API, run via `docker compose`. Migrations run
-automatically on container start.
+## Contents
 
-### 1. Get `docker` working in this WSL distro
+- [Setup](#setup)
+  - [Prerequisites](#prerequisites)
+  - [Run with Docker (recommended)](#run-with-docker-recommended)
+  - [Run without Docker](#run-without-docker)
+  - [Environment variables](#environment-variables)
+- [API at a glance](#api-at-a-glance)
+- [Design review](#design-review)
+  - [1. Review collection — custom RSS client](#1-review-collection--custom-rss-client)
+  - [2. Sentiment analysis — evaluated on a golden dataset](#2-sentiment-analysis--evaluated-on-a-golden-dataset)
+  - [3. Report structure](#3-report-structure)
+- [Future scalability](#future-scalability)
+- [Tests](#tests)
 
-This repo was developed in WSL2 with Docker Desktop on Windows. `docker` only
-works inside a WSL distro once **WSL Integration** is turned on for that
-distro:
+## Setup
 
-1. Open **Docker Desktop** → **Settings** → **Resources** → **WSL
-   Integration**.
-2. Enable the toggle for your distro (e.g. "Ubuntu").
-3. **Apply & Restart**.
-4. Open a **new** terminal window (enabling integration adds you to the
-   `docker` group; already-open shells won't pick that up).
+### Prerequisites
 
-After that, plain `docker` / `docker compose` work natively — verify with
-`docker version` (should show both a `Client` and `Server` block, no
-"permission denied").
+- **Docker + Docker Compose** (easiest path), or
+- **Python 3.12+ with [`uv`](https://docs.astral.sh/uv/)** and a reachable
+  PostgreSQL instance if running without Docker.
+- Optional: a free **Gemini API key** from
+  <https://aistudio.google.com/apikey>. Without it the app still works — it
+  falls back to local NLP (see [Environment variables](#environment-variables)).
 
-### 2. Configure environment
+### Run with Docker (recommended)
 
 ```bash
-cp .env.example .env
+cp .env.example .env            # defaults work out of the box
+docker compose up -d --build    # starts Postgres, runs migrations, starts the API
+curl http://localhost:8000/docs # interactive API docs — should return 200
 ```
 
-Defaults in `.env.example` work out of the box for local Docker use — no
-edits needed unless you want different credentials.
-
-### 3. Build and start
+That's it. Migrations (`alembic upgrade head`) run automatically on
+container start. Useful commands:
 
 ```bash
-docker compose up -d --build
+docker compose logs -f app   # tail app logs
+docker compose down          # stop (keeps the DB volume)
+docker compose down -v       # stop and wipe the DB
 ```
 
-This builds the app image, starts Postgres (waits for its healthcheck), then
-starts the app — which runs `alembic upgrade head` before launching uvicorn.
+> **WSL2 note:** if `docker` says "permission denied", enable your distro in
+> Docker Desktop → Settings → Resources → **WSL Integration**, then open a
+> new terminal.
 
-### 4. Verify it's up
+### Run without Docker
 
-```bash
-docker compose ps                    # both services should be Up (db: healthy)
-docker compose logs app --tail=50    # look for the uvicorn startup banner
-curl http://localhost:8000/docs      # interactive API docs, should return 200
-```
-
-### 5. Common operations
+Requires Postgres reachable at the `DATABASE_URL` in `.env`:
 
 ```bash
-docker compose logs -f app                       # tail app logs
-docker compose exec app alembic current           # check applied migration
-docker compose exec db psql -U postgres -d reviews  # open a DB shell
-docker compose restart app                         # restart just the app
-docker compose down                                 # stop (keeps DB volume)
-docker compose down -v                              # stop and wipe the DB volume
-```
-
-To generate a new migration after changing a model in `app/*/models.py`, run
-it against a running `db` (autogenerate needs a live connection to diff
-against):
-
-```bash
-docker compose up -d db
-docker compose run --rm app alembic revision --autogenerate -m "describe the change"
-```
-
-Review the generated file in `alembic/versions/` before applying it — it's
-written into the repo via the bind between the container and your working
-tree only if you mount the source (this project's `Dockerfile` bakes the
-source in at build time, so for iterating on migrations locally it's easier
-to run Alembic directly on the host — see below).
-
-## Running locally without Docker
-
-Requires a Postgres instance reachable at the URL in `.env`
-(`DATABASE_URL`), and [`uv`](https://docs.astral.sh/uv/).
-
-```bash
-cp .env.example .env      # edit DATABASE_URL if not using the default
+cp .env.example .env             # edit DATABASE_URL if needed
 uv sync
 uv run alembic upgrade head
 uv run fastapi dev app/main.py
 ```
 
-Generate a new migration the same way, directly on the host:
+### Environment variables
 
-```bash
-uv run alembic revision --autogenerate -m "describe the change"
-```
+All configuration lives in `.env` (see `.env.example` for full comments):
 
-## Running tests
-
-```bash
-uv run pytest
-```
-
-The whole suite needs a dedicated `reviews_test` Postgres database — a
-session-scoped fixture in `tests/conftest.py` (re)creates the schema once
-per test run, and route-level tests exercise real queries against it:
-
-```bash
-# db's port isn't published by default (see docker-compose.yml) — expose it
-# temporarily, same as for local alembic autogenerate:
-#   ports:
-#     - "5432:5432"
-docker compose up -d db
-docker compose exec db psql -U postgres -c "CREATE DATABASE reviews_test;"  # once
-uv run pytest
-```
-
-`tests/conftest.py` creates/drops the `reviews_test` schema once per test
-session from the SQLAlchemy models directly (no Alembic needed for tests)
-and wraps each test in a rolled-back transaction.
-
-## Approach & design decisions
-
-The API is fully synchronous, on purpose: collecting up to a few hundred
-reviews (a handful of paginated HTTP calls) and running lightweight NLP over
-them takes low single-digit seconds, not long enough to justify a job queue,
-background worker, or polling. An earlier iteration of this project used a
-Postgres-backed job/worker pipeline for exactly that reason and it turned
-out to be more machinery than the problem needed — this version replaces it
-with plain request/response endpoints.
-
-Every resource is keyed off `sample_id`, the id of the `ReviewSample`
-produced by a collect call:
-
-| Method | Path | Description |
+| Variable | Required | Purpose |
 |---|---|---|
-| POST | `/api/v1/reviews` | Fetch up to `sample_size` reviews for `{app_id, country_code}` from the App Store and persist them. Returns the full sample immediately (**201**) — no polling. |
-| GET | `/api/v1/reviews/{sample_id}` | The raw persisted sample (all reviews). |
-| GET | `/api/v1/reviews/{sample_id}/download?format=json\|csv` | The same data as a file attachment. |
-| GET | `/api/v1/metrics/{sample_id}` | Average rating + rating distribution. Computed on the fly, nothing stored. |
-| GET | `/api/v1/insights/{sample_id}` | Sentiment distribution, rating/sentiment disagreements, negative-review keywords, an executive summary, and evidence-grounded actionable insights (with `actionable_insights_source` stating whether Gemini or the local fallback produced them). Computed on the fly. |
-| GET | `/api/v1/reports/{sample_id}` | An HTML report combining the above, with embedded charts. |
+| `DATABASE_URL` | yes (non-Docker) | Postgres connection string. Ignored under Docker Compose — the app container builds it from the `POSTGRES_*` values. |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | yes (Docker) | Credentials for the Postgres container and the app's connection to it. Defaults work as-is. |
+| `GEMINI_API_KEY` | no | Enables Gemini-powered sentiment analysis and actionable-insight generation. **If unset, the app automatically falls back** to VADER (sentiment) and TF-IDF keyword themes (insights) — less accurate, but fully local. |
+| `GEMINI_MODEL_NAME` | no | Sentiment model, default `gemini-flash-lite-latest`. |
+| `GEMINI_INSIGHTS_MODEL_NAME` | no | Insight-generation model, default `gemini-3.1-flash-lite`. |
 
-A collect call creates a fresh sample every time rather than deduplicating
-on `(app_id, country_code)` — reviews change over time, and there's no
-job state to reuse, so simplicity wins over avoiding a duplicate fetch.
+## API at a glance
 
-**Data collection** (`app/reviews/appstore/`) validates the app exists via
-Apple's iTunes Lookup API, then paginates the (undocumented) customer
-reviews RSS feed, retrying 403/429/5xx with backoff+jitter and
-self-throttling between pages — Apple's rate limiting is IP-based and
-undocumented, so this is a deliberately conservative default. Three
-domain exceptions (`AppNotFoundError`, `InvalidCountryCodeError`,
-`AppStoreUnavailableError`) are mapped to `404`/`400`/`503` by exception
-handlers in `app/main.py`, each logged with request context before
-responding — see `app/reviews/appstore/http.py`, `lookup_client.py`, and
-`reviews_client.py` for the retry/logging details.
+Everything is keyed by `sample_id` — the id returned when you collect
+reviews. The API is deliberately synchronous: collecting ~100 reviews plus
+NLP takes a few seconds, not enough to justify job queues or polling.
 
-**Insights** (`app/insights/service.py`):
-- **Sentiment**: classified by the Gemini API (`gemini-flash-lite-latest` —
-  see `docs/SENTIMENT_ANALYSIS_RESULTS.md` for why: macro F1 0.87 vs. 0.55
-  for the lexicon-based alternative below; current rate limits are listed at
-  <https://ai.google.dev/gemini-api/docs/rate-limits>), reading only each
-  review's `title`/`content`, never its star rating. Requires
-  `GEMINI_API_KEY` (see `.env.example`) — get a free one at
-  <https://aistudio.google.com/apikey>. Reviews are sent to Gemini in
-  batches of up to 150 per request, with retry/backoff on 429/5xx. **If
-  `GEMINI_API_KEY` is unset, or the Gemini call fails even after retries,
-  the endpoint automatically falls back to a local `vaderSentiment`
-  classifier** (a rule-based analyzer tuned for short informal text) and
-  logs a warning — the endpoint always responds, just less accurately
-  without a working Gemini key.
-- **Negative-review keywords**: reviews with a rating ≤ 2 are "negative
-  reviews." TF-IDF (`scikit-learn`, unigrams + bigrams) is fit against the
-  *whole* sample so ubiquitous terms score low, then evaluated only on the
-  negative subset, so the ranking reflects terms concentrated in complaints
-  rather than just common words. Contractions are normalized before
-  tokenization (so "don't" can't leak fragments like "don" into the
-  keyword list), and inflectional variants of one complaint
-  ("charge"/"charged"/"charging") are merged into a single keyword whose
-  count is the number of negative reviews mentioning any variant.
-- **Actionable insights** (`app/insights/gemini_insight_generator.py`): a
-  second, separate Gemini structured-output call (model configurable via
-  `GEMINI_INSIGHTS_MODEL_NAME`, default `gemini-3.1-flash-lite`) groups
-  complaint reviews — the union of rating ≤ 2 reviews and reviews whose
-  *text* Gemini judged negative, so complaints hidden behind 4–5★ ratings
-  count too — into up to five semantic themes, each with a one-sentence
-  problem summary, a concrete recommended next step, and the complete list
-  of supporting review ids (`evidence_review_ids` — every review behind the
-  theme, not a truncated sample). The LLM only drafts text and cites ids;
-  the application
-  verifies every cited id against the sample, drops non-recurring themes
-  (fewer than two supporting reviews when two or more complaint candidates
-  exist), and computes all evidence counts itself — an ungrounded or
-  malformed response is discarded entirely. Review text is serialized as
-  JSON and explicitly framed as untrusted data, so instructions embedded in
-  a review are not followed. **If `GEMINI_API_KEY` is unset or the call
-  fails, the endpoint falls back to a rule-based generator** that turns the
-  top TF-IDF phrases into themes; `actionable_insights_source` in the
-  response (`gemini` / `rule_based_fallback` / `none`) states which path
-  produced the result.
+| Method | Path | Returns |
+|---|---|---|
+| POST | `/api/v1/reviews` | Collects up to `sample_size` reviews for `{app_id, country_code}` and persists them. Responds `201` with the full sample. |
+| GET | `/api/v1/reviews/{sample_id}` | Raw persisted reviews. |
+| GET | `/api/v1/reviews/{sample_id}/download?format=json\|csv` | Same data as a downloadable file. |
+| GET | `/api/v1/metrics/{sample_id}` | Average rating + rating distribution. |
+| GET | `/api/v1/insights/{sample_id}` | Sentiment distribution, negative-review keywords, actionable insights. |
+| GET | `/api/v1/reports/{sample_id}` | Self-contained HTML report with charts. |
 
-**Reports** (`app/reports/`) render a print-friendly Jinja2 HTML template —
-stat tiles, an executive summary, and one card per actionable insight that
-lists **every** supporting review (stars, title, date, version, and a
-content excerpt), so each theme can be verified against its raw evidence.
-Rating and sentiment distribution charts are generated by `matplotlib` and
-embedded as base64 PNGs — no static file serving or temp files needed.
-
-## Sample report
-
-`docs/sample_report/` contains a real run against the Facebook app
-(`app_id=284882215`, `us` store, 100 reviews) produced end-to-end from this
-codebase: `facebook_report.html` (open it directly in a browser),
-`facebook_metrics.json`, `facebook_insights.json`, and the raw
-`facebook_reviews.json`. Reproduce it (or run it against any other app) with:
+Quick start:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/reviews \
@@ -220,83 +100,155 @@ curl -X POST http://localhost:8000/api/v1/reviews \
   -d '{"app_id": 284882215, "country_code": "us", "sample_size": 100}'
 # -> {"id": "<sample_id>", ...}
 
-curl http://localhost:8000/api/v1/metrics/<sample_id>
-curl http://localhost:8000/api/v1/insights/<sample_id>
 curl http://localhost:8000/api/v1/reports/<sample_id> -o report.html
 ```
 
-**Known limitations:**
-- Apple's App Store rate limits are undocumented and IP-based.
-  Self-throttling and retry-with-backoff reduce, but don't eliminate,
-  403/429s under bursty load — a collect call can occasionally take several
-  seconds or fail with `503` under load.
-- TF-IDF keyword extraction is inherently noisy on short review text
-  (a handful of words each); it surfaces genuinely useful themes but isn't
-  as precise as a purpose-built keyphrase model would be.
-- Gemini free-tier rate limits
-  (<https://ai.google.dev/gemini-api/docs/rate-limits>) can be hit by a
-  sample large enough to need several concurrent sentiment batches; such a
-  request falls back to VADER (sentiment) / the rule-based generator
-  (actionable insights) after retries.
-- Repeated `/insights` and `/reports` calls for the same sample recompute
-  the Gemini output each time (nothing is cached or persisted), so results
-  can drift slightly between calls and each call costs quota.
-- No auth/rate limiting on the API itself — out of scope for this MVP.
+## Design review
 
-## Sentiment analysis evaluation (`scripts/sentiment_eval/`)
+### 1. Review collection — custom RSS client
 
-Standalone research scripts (not part of the running API) that collect a
-golden set of real reviews, manually label their sentiment, then compare a
-"default" lexicon-based NLP approach (VADER, TextBlob) against a Gemini LLM
-call. Results are written to `docs/SENTIMENT_ANALYSIS_RESULTS.md`.
+We fetch reviews from Apple's (undocumented) customer-reviews RSS feed with
+a **custom client** (`app/reviews/appstore/`) instead of an off-the-shelf
+scraping library. The existing open-source options were ruled out on
+inspection: the maintained ones had their **last release ~2 years ago**, are
+**synchronous only** (this is an async FastAPI service), and have **no
+reliable error handling** for the feed's real-world failure modes — Apple
+returns `200` with a missing `entry` key for nonexistent apps, plain-text
+`400`s for bad country codes, and undocumented IP-based `403`/`429`
+throttling with no `Retry-After` headers.
 
-### 1. Install the eval dependencies
+The custom client:
+
+- validates the app id first via the official iTunes Lookup API (so "app
+  doesn't exist" is a clean `404`, not an empty scrape);
+- paginates the RSS feed (hard-capped by Apple at 500 reviews/app) with
+  retry + exponential backoff + jitter on `403`/`429`/`5xx`, and
+  self-throttles between pages;
+- maps failures to three domain exceptions → `404` (app not found), `400`
+  (invalid country), `503` (App Store unavailable), each logged with request
+  context.
+
+Feed research notes (live-tested formats, error codes, rate-limit behavior)
+are in [`docs/APPSTORE_RSS_RESEARCH.md`](docs/APPSTORE_RSS_RESEARCH.md).
+
+### 2. Sentiment analysis — evaluated on a golden dataset
+
+Rather than picking an NLP library on faith, we **built a golden dataset of
+1,500 real reviews** (3 apps from different categories × 500 reviews, so the
+class mix isn't skewed by one app's user base), **labeled it with Claude and
+then manually reviewed the labels**, and scored the candidate approaches
+against it:
+
+| Method | Accuracy | Macro F1 | Recall: positive | Recall: neutral | Recall: negative |
+|---|---|---|---|---|---|
+| **Gemini (`gemini-flash-lite-latest`)** | **92.3%** | **0.87** | 97.2% | 63.0% | 98.1% |
+| Rating-derived (naive baseline) | 83.5% | 0.69 | 98.9% | 18.9% | 87.1% |
+| VADER | 69.5% | 0.55 | 89.9% | 11.9% | 59.8% |
+| TextBlob | 60.9% | 0.49 | 84.7% | 30.8% | 29.7% |
+
+We ranked by **macro F1, not accuracy**: the set is 56% positive, so a
+classifier that always says "positive" would look decent on accuracy while
+never catching an unhappy user — the reviews this product exists to surface.
+
+**Result: Gemini won decisively**, especially on negative recall (98% vs.
+VADER's 60% and TextBlob's 30%), so it's the production classifier. VADER
+remains the automatic fallback when no API key is set or Gemini is
+unavailable. Full per-method confusion matrices, example disagreements, and
+caveats: [`docs/SENTIMENT_ANALYSIS_RESULTS.md`](docs/SENTIMENT_ANALYSIS_RESULTS.md).
+The whole evaluation is reproducible via `scripts/sentiment_eval/`.
+
+Sentiment is classified from the review **text only** — never the star
+rating — which lets the insights endpoint surface rating/sentiment
+disagreements (e.g. complaints hidden behind 4–5★ ratings).
+
+### 3. Report structure
+
+`GET /api/v1/reports/{sample_id}` renders a single self-contained HTML page
+(Jinja2 template, charts embedded as base64 PNGs — no static files):
+
+1. **Stat tiles** — sample size, average rating, sentiment split.
+2. **Charts** — rating distribution and sentiment distribution (matplotlib).
+3. **Executive summary** — a short prose overview of the sample.
+4. **Negative-review keywords** — TF-IDF (unigrams + bigrams) fitted on the
+   whole sample but scored on rating ≤ 2 reviews, so it surfaces terms
+   *concentrated in complaints* rather than terms common everywhere.
+5. **Actionable insights** — one card per complaint theme. A second Gemini
+   structured-output call groups complaint reviews into up to five themes,
+   each with a problem summary and a concrete recommended fix. The LLM only
+   drafts text and cites review ids; **the application verifies every cited
+   id, drops non-recurring themes, and computes all counts itself** — an
+   ungrounded response is discarded. Each card lists *every* supporting
+   review (stars, title, date, version, excerpt), so any claim in the report
+   can be checked against its raw evidence.
+
+The same data is available as JSON via `/api/v1/metrics/{sample_id}` and
+`/api/v1/insights/{sample_id}` (which also states, via
+`actionable_insights_source`, whether Gemini or the local fallback produced
+the insights).
+
+## Future scalability
+
+The endpoints are synchronous **by choice** for this test task — it kept the
+focus on the analysis part. For real production usage, the first things I
+would refactor:
+
+1. **Persist computed results.** The DB currently stores only reviews;
+   metrics and insights should be stored per sample too, so repeated
+   `/insights` and `/reports` calls return the stored result instead of
+   recomputing (and re-spending Gemini quota) every time.
+2. **Make collection and insight generation async.** These already take
+   several seconds, and future improvements will only make them longer.
+   Move them to a task queue (e.g. Celery) with the standard process
+   pattern:
+   - `POST /collect` → `202` + `process_id`
+   - `GET /status/{process_id}` → `status` + `result_id | null`
+   - `GET /result/{result_id}` → the result
+3. **Rate limiting** on the review-collection and report endpoints — both
+   are expensive (Apple's IP-based throttling on one side, LLM quota on the
+   other), so they're the first candidates for abuse.
+
+### Toward continuous monitoring
+
+For extending functionality, the natural next step is a **lifetime review
+monitoring system** instead of one-off samples: reviews live in the DB
+permanently, the history is backfilled once via a paid third-party review
+scraper service (Apple's RSS feed only exposes the latest 500 reviews per
+app), and from then on our own RSS client collects new reviews
+incrementally on a cron job in near real time.
+
+### LLM cost, and how to cut it if it matters
+
+At current Gemini 3.1 Flash-Lite pricing ($0.25 / 1M input tokens, $1.50 /
+1M output, July 2026), with the average review at ~140 characters (~35
+tokens of text, ~60 with the JSON envelope, measured on the sample data),
+**analyzing 1,000 reviews costs about $0.05**:
+
+| Call | Requests | Input tokens | Output tokens | Cost |
+|---|---|---|---|---|
+| Sentiment (batches of 150) | 7 | ~65k | ~15k (label per review) | ~$0.04 |
+| Actionable insights (complaint subset, ~40%) | 1 | ~25k | ~3k (5 themes + evidence ids) | ~$0.01 |
+
+That's negligible for on-demand samples, but at continuous-monitoring scale
+(many apps × new reviews daily) it adds up. If cost becomes a problem, the
+optimization is a **VADER pre-filter**: when the star rating and VADER
+agree, the sentiment is obvious and doesn't need an LLM — 1–2★ + VADER
+negative is negative, 4–5★ + VADER positive is positive, 3★ + VADER
+neutral is neutral. Only the remaining disagreement cases get
+double-checked with a Gemini call. On the golden dataset, VADER and the
+rating-derived label agree ~75% of the time, so this cuts sentiment LLM
+volume roughly **4×** while spending the LLM budget exactly where lexicon
+methods are weakest.
+
+## Tests
 
 ```bash
-uv sync --group eval
+docker compose up -d db
+docker compose exec db psql -U postgres -c "CREATE DATABASE reviews_test;"  # once
+uv run pytest
 ```
 
-### 2. Get a free Gemini API key
-
-1. Go to <https://aistudio.google.com/apikey> and create a free-tier API key.
-2. Add it to `.env` at the repo root:
-   ```
-   GEMINI_API_KEY=your-key-here
-   ```
-   (Optional: `GEMINI_MODEL_NAME` to override the default
-   `gemini-flash-lite-latest` -- picked because Flash-Lite's free-tier
-   request quota is far higher than full Flash's; check the current caps at
-   <https://ai.google.dev/gemini-api/docs/rate-limits> before scoring a
-   1500-review set.)
-
-### 3. Run the pipeline, in order
-
-```bash
-# 1. Fetch 500 real reviews each for 3 apps via the App Store collector
-#    (edit the APPS list in collect_multi.py to change which apps/how many)
-uv run python -m scripts.sentiment_eval.collect_multi
-
-# 1b. Or fetch reviews for a single app instead
-uv run python -m scripts.sentiment_eval.collect_reviews --app-id 1459969523 --country us --limit 100
-
-# 2. Regenerate the manually labeled golden dataset (labels are hardcoded in
-#    the script -- see its docstring for the labeling methodology)
-uv run python -m scripts.sentiment_eval.build_golden_dataset
-
-# 3. Score with VADER + TextBlob (no network, no API key needed)
-uv run python -m scripts.sentiment_eval.baseline_lexicon
-
-# 4. Score with Gemini (needs GEMINI_API_KEY from step 2 above; batches of
-#    150 reviews fired concurrently, resumable if a run gets interrupted)
-uv run python -m scripts.sentiment_eval.gemini_sentiment
-
-# 5. Compare all approaches against the golden labels -- produces a
-#    per-label correctness matrix (precision/recall/F1 + confusion matrix)
-#    and a macro-F1 ranking, since raw accuracy is misleading on an
-#    imbalanced class distribution
-uv run python -m scripts.sentiment_eval.evaluate
-```
-
-Each script's output lands in `scripts/sentiment_eval/data/`. Step 5 always
-produces `docs/SENTIMENT_ANALYSIS_RESULTS.md`; if step 4 hasn't been run yet,
-the Gemini section is left marked as pending rather than failing.
+The suite runs route-level tests against a real `reviews_test` Postgres
+database; `tests/conftest.py` creates the schema per session and rolls each
+test back. Note: `db`'s port isn't published by default — add
+`ports: ["5432:5432"]` to the `db` service in `docker-compose.yml` (or use an
+already-exposed Postgres) so pytest on the host can reach it.

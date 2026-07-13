@@ -12,11 +12,8 @@ _LOOKUP_URL = "https://itunes.apple.com/lookup"
 
 
 class AppStoreLookupClient:
-    """Pre-flight validates an (app_id, country_code) pair via Apple's iTunes
-    Lookup API, before any RSS request is made. The RSS feed itself is a poor
-    validator: it returns 200 for a nonexistent app id and a vague plain-text
-    400 for a bad country code (docs/APPSTORE_RSS_RESEARCH.md).
-    """
+    """Validates (app_id, country_code) via the iTunes Lookup API — the RSS feed
+    itself returns 200 for nonexistent apps, so it can't validate."""
 
     def __init__(self, http: httpx.AsyncClient, *, max_retries: int, retry_base_delay: float) -> None:
         self._http = http

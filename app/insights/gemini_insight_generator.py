@@ -1,11 +1,5 @@
-"""Gemini-backed actionable-insight generation for the insights endpoint.
-
-Separate from GeminiSentimentClassifier on purpose: the sentiment prompt and
-schema are pinned by the evaluation in docs/SENTIMENT_ANALYSIS_RESULTS.md,
-while this component groups complaint candidates into semantic themes with
-grounded evidence. The LLM only drafts text and cites review ids; every id is
-verified against the input set here, and all counting happens in the app.
-"""
+"""Gemini-backed actionable-insight generation: the LLM only drafts text and cites
+review ids; all id verification and counting happens in the app."""
 
 import asyncio
 import json
@@ -24,8 +18,7 @@ from app.reviews import schemas as review_schemas
 logger = logging.getLogger(__name__)
 
 MAX_THEMES = 5
-# Truncation caps applied before prompt rendering so a 500-review sample
-# can't produce an unbounded request.
+# Truncation caps applied before prompt rendering to bound the request size.
 _TITLE_MAX_CHARS = 300
 _CONTENT_MAX_CHARS = 2000
 _APP_VERSION_MAX_CHARS = 50
@@ -83,10 +76,8 @@ class GeminiInsightDraft(BaseModel):
     themes: list[GeminiThemeDraft]
 
 
-# Wire models kept separate from the validated draft: the Gemini structured-
-# output schema uses plain strings for ids (UUID formats aren't part of the
-# supported response-schema subset), and nothing parsed from the wire is
-# trusted until it passes _validate_draft.
+# Wire models use plain-string ids (UUID isn't in Gemini's response-schema subset);
+# nothing parsed from the wire is trusted until it passes _validate_draft.
 class _WireTheme(BaseModel):
     theme: str
     problem_summary: str
@@ -100,8 +91,7 @@ class _WireInsights(BaseModel):
 
 
 class GeminiInsightGenerationError(Exception):
-    """Gemini insight generation failed (provider error after retries,
-    malformed structured output, or an ungrounded/invalid response)."""
+    """Provider error after retries, malformed output, or an ungrounded response."""
 
 
 def _serialize_reviews(reviews: list[review_schemas.Review]) -> str:
@@ -127,11 +117,8 @@ def _normalize_theme_name(theme: str) -> str:
 def _validate_draft(
     wire: _WireInsights, reviews: list[review_schemas.Review]
 ) -> GeminiInsightDraft:
-    """Strict grounding validation. Unknown ids, duplicate ids within a theme,
-    and duplicate theme names fail the whole attempt (a partially grounded
-    response is not trusted); non-recurring themes are merely dropped, since
-    the recurrence cutoff is our rule, not a sign the model hallucinated.
-    """
+    """Unknown/duplicate ids or duplicate themes fail the whole attempt;
+    non-recurring themes are merely dropped (the cutoff is our rule)."""
     known_ids = {str(review.id): review.id for review in reviews}
     if not wire.executive_summary.strip():
         raise GeminiInsightGenerationError("Gemini returned an empty executive summary")
@@ -162,9 +149,7 @@ def _validate_draft(
                 )
             evidence_ids.append(known_ids[raw_id])
 
-        # Recurrence rule: with 2+ complaint candidates a theme needs at least
-        # two distinct supporting reviews; a single candidate supports at most
-        # one single-review theme.
+        # Recurrence rule: with 2+ candidates a theme needs 2+ supporting reviews.
         if len(reviews) >= 2 and len(evidence_ids) < 2:
             continue
         if not evidence_ids:
@@ -195,10 +180,7 @@ class GeminiInsightGenerator:
         self._request_timeout_seconds = request_timeout_seconds
 
     async def generate(self, reviews: list[review_schemas.Review]) -> GeminiInsightDraft:
-        """Generate a grounded insight draft from the complaint-candidate
-        reviews. Raises GeminiInsightGenerationError on any provider,
-        parsing, or grounding failure — the caller falls back locally.
-        """
+        """Raises GeminiInsightGenerationError on any provider, parsing, or grounding failure."""
         if not reviews:
             return GeminiInsightDraft(executive_summary="", themes=[])
         prompt = _USER_PROMPT_TEMPLATE.format(reviews_json=_serialize_reviews(reviews))

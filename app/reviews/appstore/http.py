@@ -8,9 +8,7 @@ from app.reviews.appstore.errors import AppStoreUnavailableError
 
 logger = logging.getLogger(__name__)
 
-# Apple's rate limiting is undocumented and IP-based, with no rate-limit
-# headers to detect it proactively (docs/APPSTORE_RSS_RESEARCH.md) — treat
-# 403/429 the same as a transient 5xx and retry with backoff+jitter.
+# Apple rate-limits without headers, so 403/429 are retried like transient 5xx.
 RETRYABLE_STATUSES = {403, 429, 500, 502, 503, 504}
 
 

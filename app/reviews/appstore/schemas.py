@@ -1,8 +1,5 @@
-"""Pydantic models for Apple's own wire format (iTunes Lookup + RSS reviews
-feed) — see docs/APPSTORE_RSS_RESEARCH.md for the researched shape and
-gotchas. Kept separate from app.reviews.schemas, which is this app's own
-public API contract, not Apple's.
-"""
+"""Apple's wire format (iTunes Lookup + RSS feed), separate from this app's
+own API contract in app.reviews.schemas."""
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,8 +25,7 @@ class AppleFeedEntry(BaseModel):
 
 
 class AppleReviewsFeed(BaseModel):
-    # Apple omits the "entry" key entirely on an empty/exhausted feed — a
-    # default of [] means that parses as "no reviews", not a validation error.
+    # Apple omits "entry" on an exhausted feed; default [] parses that as "no reviews".
     entry: list[AppleFeedEntry] = Field(default_factory=list)
 
 

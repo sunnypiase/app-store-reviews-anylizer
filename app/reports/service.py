@@ -35,9 +35,7 @@ def _fig_to_base64_png(fig: "plt.Figure") -> str:
 
 
 def _bar_chart(labels: list[str], values: list[int], colors: list[str], title: str) -> str:
-    """Count bars with direct value labels and a recessive baseline-only
-    axis — every value is printed on its bar, so the y-axis and grid would
-    be redundant ink."""
+    """Values are printed on the bars, so the y-axis and grid would be redundant ink."""
     fig, ax = plt.subplots(figsize=(4.6, 2.9))
     ax.set_facecolor(_SURFACE)
     bars = ax.bar(labels, values, color=colors, width=0.6)

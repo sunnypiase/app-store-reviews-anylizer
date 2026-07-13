@@ -14,10 +14,8 @@ _MAX_PAGE = 10
 
 
 class AppStoreReviewsClient:
-    """Paginates Apple's customerreviews RSS feed for one (app_id,
-    country_code), stopping at `limit` reviews collected, page 10 (Apple's
-    hard 500-review cap), or a partial/empty page.
-    """
+    """Paginates the RSS feed, stopping at `limit`, page 10 (Apple's hard cap),
+    or a partial/empty page."""
 
     def __init__(
         self,

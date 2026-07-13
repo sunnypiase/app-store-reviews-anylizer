@@ -23,14 +23,11 @@ class GeminiConfig(BaseConfig):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="GEMINI_")
 
     api_key: str = ""
-    # Flash-Lite keeps per-request cost/latency low at request-serving scale;
-    # current limits: https://ai.google.dev/gemini-api/docs/rate-limits
+    # Flash-Lite keeps per-request cost/latency low at request-serving scale.
     model_name: str = "gemini-flash-lite-latest"
-    # Actionable-insight generation (separate from sentiment classification).
-    # Must be a stable model with structured-output support.
+    # Insight generation needs a stable model with structured-output support.
     insights_model_name: str = "gemini-3.1-flash-lite"
-    # Per-attempt cap so the synchronous /insights and /reports endpoints
-    # can't hang on a stuck provider request.
+    # Per-attempt cap so /insights and /reports can't hang on a stuck provider request.
     insights_request_timeout_seconds: float = 30.0
 
 

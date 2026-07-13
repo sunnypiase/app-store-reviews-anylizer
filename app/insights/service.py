@@ -39,9 +39,7 @@ logger = logging.getLogger(__name__)
 
 _analyzer = SentimentIntensityAnalyzer()
 
-# A review counts as "negative" for keyword/theme mining once its star
-# rating drops to this or below — independent of the computed sentiment
-# label, per the task's plain-language definition of "negative reviews".
+# Rating at or below this counts as "negative" for keyword mining, regardless of sentiment.
 _NEGATIVE_RATING_THRESHOLD = 2
 _TOP_KEYWORD_COUNT = 10
 _TOP_ACTIONABLE_INSIGHTS = 3
@@ -65,11 +63,7 @@ async def classify_sentiments(
     reviews: list[review_schemas.Review],
     gemini_classifier: GeminiSentimentClassifier | None,
 ) -> list[Sentiment]:
-    """Gemini, when configured, with an automatic VADER fallback -- keeps
-    the endpoint usable without an API key and resilient to Gemini being
-    down, at the cost of degraded accuracy (see
-    docs/SENTIMENT_ANALYSIS_RESULTS.md for the accuracy gap).
-    """
+    """Gemini when configured, with automatic VADER fallback (degraded accuracy)."""
     if gemini_classifier is not None:
         try:
             sentiment_by_id = await gemini_classifier.classify(reviews)
@@ -135,17 +129,8 @@ def extract_negative_keywords(
 ) -> list[NegativeKeyword]:
     if not negative_reviews:
         return []
-    # Fit IDF against the *whole* sample, not just the negative subset: a
-    # term that shows up in every review regardless of rating (the app's own
-    # name, "app" itself) should score low, while terms concentrated in
-    # negative reviews specifically should score high. Fitting IDF on the
-    # negative subset alone can't tell "ubiquitous" from "distinctively
-    # negative" apart.
-    # Normalization, tokenization, and stopwords all come from
-    # app.insights.text_preparation so sklearn sees exactly the same tokens
-    # as the rest of the pipeline — in particular, the letters-only
-    # TOKEN_PATTERN keeps price fragments like the "99" in "$4.99" out of
-    # the vocabulary (sklearn's default pattern would admit them).
+    # IDF is fit on the whole sample so ubiquitous terms score low; tokenization
+    # comes from text_preparation so sklearn sees the same tokens as the pipeline.
     vectorizer = TfidfVectorizer(
         ngram_range=(1, 2),
         stop_words=STOP_WORDS,
@@ -164,10 +149,7 @@ def extract_negative_keywords(
 
     scores = matrix.sum(axis=0).A1
     presence = (matrix > 0).toarray()
-    # Merge inflections ("charge"/"charged"/"charging") into one keyword so
-    # the top-N list covers N distinct complaints instead of repeating one;
-    # each merged keyword displays its highest-scoring surface form and
-    # counts reviews containing *any* variant.
+    # Merge inflections under one stem so the top-N list covers N distinct complaints.
     groups: dict[str, _KeywordGroup] = {}
     for idx, term in enumerate(vectorizer.get_feature_names_out()):
         groups.setdefault(stem_phrase(term), _KeywordGroup()).add(
@@ -192,9 +174,7 @@ def build_actionable_insights(
     review_stems = [
         (review, stemmed_tokens(_review_text(review))) for review in negative_reviews
     ]
-    # Prefer multi-word phrases as themes: a bigram like "customer service"
-    # is more specific than its own component words, which otherwise tend to
-    # rank just as high by tf-idf and would otherwise crowd out other themes.
+    # Prefer bigrams as themes — more specific than their component words.
     theme_candidates = sorted(negative_keywords, key=lambda kw: kw.phrase.count(" "), reverse=True)
     for keyword in theme_candidates:
         if len(insights) >= top_n:
@@ -202,8 +182,7 @@ def build_actionable_insights(
         phrase_stems = {stem(token) for token in keyword.phrase.split()}
         if phrase_stems & chosen_stems:
             continue
-        # Stem-based matching so a review saying "charging" counts as
-        # evidence for the "charged" keyword and vice versa.
+        # Stem-based matching so "charging" counts as evidence for "charged".
         matching = [review for review, stems in review_stems if phrase_stems <= stems]
         if not matching:
             continue
@@ -225,10 +204,7 @@ def build_actionable_insights(
 def build_complaint_candidates(
     reviews: list[review_schemas.Review], sentiments: list[Sentiment]
 ) -> list[review_schemas.Review]:
-    """Union of low-rated reviews and negative-text reviews, deduplicated by
-    id (input order preserved). The union keeps the assignment's rating-based
-    definition while also catching complaints hidden behind 3-5 star ratings.
-    """
+    """Union of low-rated and negative-text reviews, input order preserved."""
     return [
         review
         for review, sentiment in zip(reviews, sentiments, strict=True)
@@ -237,10 +213,7 @@ def build_complaint_candidates(
 
 
 def _draft_to_actionable_insights(draft: GeminiInsightDraft) -> list[ActionableInsight]:
-    """The app — not the LLM — computes evidence counts from the validated
-    evidence lists (every cited review is included, not a truncated sample);
-    text fields are capped to the public-schema limits.
-    """
+    """Evidence counts are computed here from validated ids, never taken from the LLM."""
     insights = [
         ActionableInsight(
             theme=theme.theme[:THEME_MAX_LENGTH],
@@ -307,8 +280,7 @@ async def compute_insights(
     insight_generator: GeminiInsightGenerator | None = None,
 ) -> Insight:
     sentiments = await classify_sentiments(reviews, gemini_classifier)
-    # negative_keywords keeps its original rating-only population; only the
-    # actionable-insight generation widens to the rating/sentiment union.
+    # negative_keywords stays rating-only; only actionable insights use the wider union.
     negative_reviews = [review for review in reviews if review.rating <= _NEGATIVE_RATING_THRESHOLD]
     negative_keywords = extract_negative_keywords(reviews, negative_reviews)
     complaint_candidates = build_complaint_candidates(reviews, sentiments)

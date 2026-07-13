@@ -12,11 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 class AppStoreCollector:
-    """Implements ReviewCollector: validate via Lookup, paginate the RSS
-    feed, map Apple's wire format into CollectedReview. One malformed entry
-    inside an otherwise-good page is skipped and logged, not fatal to the
-    whole job.
-    """
+    """Validate via Lookup, paginate the RSS feed, map to CollectedReview;
+    a malformed entry is skipped and logged, not fatal."""
 
     def __init__(self, lookup: AppStoreLookupClient, reviews: AppStoreReviewsClient) -> None:
         self._lookup = lookup

@@ -20,8 +20,7 @@ class ReviewSample(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, server_default=text("gen_random_uuid()")
     )
-    # BigInteger: real App Store numeric app ids can exceed the 32-bit
-    # INTEGER range (2,147,483,647) as Apple's id space has grown.
+    # BigInteger: App Store app ids can exceed the 32-bit INTEGER range.
     app_id: Mapped[int] = mapped_column(BigInteger)
     country_code: Mapped[str] = mapped_column(String(2))
     created_at: Mapped[datetime] = mapped_column(
